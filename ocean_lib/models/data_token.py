@@ -218,22 +218,27 @@ class DataToken(ContractBase):
         except ConnectionClosed:
             # try again in this case
             tx_receipt = self.get_tx_receipt(tx_id)
+        except Exception:
+            tx_receipt = None
 
-        if tx_receipt is None:
-            raise AssertionError(
-                "Failed to get tx receipt for the `startOrder` transaction.."
-            )
-
-        if tx_receipt.status == 0:
-            raise AssertionError("order transaction failed.")
+        if tx_receipt is not None:
+            if tx_receipt.status == 0:
+                raise AssertionError("order transaction failed.")
+            event_logs = event().processReceipt(tx_receipt)
+        # else:
+        # TODO: check status, how?
+        block_number = web3.eth.blockNumber
+        event_logs = self.get_event_logs(
+            "OrderStarted", None, block_number, block_number
+        )
 
         receiver = self.contract_concise.minter()
-        event_logs = event().processReceipt(tx_receipt)
         order_log = event_logs[0] if event_logs else None
         if not order_log:
             raise AssertionError(
                 f"Cannot find the event for the order transaction with tx id {tx_id}."
             )
+
         assert (
             len(event_logs) == 1
         ), f"Multiple order events in the same transaction !!! {event_logs}"
@@ -268,6 +273,12 @@ class DataToken(ContractBase):
         if sender not in [order_log.args.consumer, order_log.args.payer]:
             raise AssertionError(
                 "sender of order transaction is not the consumer/payer."
+            )
+        if tx_receipt:
+            transfer_logs = self.events.Transfer().processReceipt(tx_receipt)
+        else:
+            transfer_logs = self.get_event_logs(
+                "Transfer", None, block_number, block_number
             )
         transfer_logs = self.events.Transfer().processReceipt(tx_receipt)
         receiver_to_transfers = {}
